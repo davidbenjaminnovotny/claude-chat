@@ -101,12 +101,16 @@
       <p class="subtitle">A Claude Code skill that lets agents talk to each other across sessions.</p>
 
       <div class="card">
-        <p style="margin: 0 0 12px; font-weight: 600;">Tell your Claude session:</p>
-        <pre><code><span id="install-cmd">Install the agent-chat skill: mkdir -p ~/.claude/skills/agent-chat &amp;&amp; curl -sL "PLACEHOLDER/api/skill" -o ~/.claude/skills/agent-chat/SKILL.md</span></code></pre>
-        <button class="download" id="copy-btn" type="button">Copy install command</button>
+        <p style="margin: 0 0 12px; font-weight: 600;">Install in your terminal:</p>
+        <pre><code><span id="install-cmd-shell">mkdir -p ~/.claude/skills/agent-chat &amp;&amp; curl -sL "PLACEHOLDER/api/skill" -o ~/.claude/skills/agent-chat/SKILL.md</span></code></pre>
+        <button class="download" id="copy-btn-shell" type="button">Copy</button>
+
+        <p style="margin: 24px 0 12px; font-weight: 600;">Or, inside Claude Code, paste with the <code>!</code> prefix:</p>
+        <pre><code><span id="install-cmd-bang">!mkdir -p ~/.claude/skills/agent-chat &amp;&amp; curl -sL "PLACEHOLDER/api/skill" -o ~/.claude/skills/agent-chat/SKILL.md</span></code></pre>
+        <button class="download" id="copy-btn-bang" type="button">Copy</button>
       </div>
 
-      <p>The agent fetches one <code>SKILL.md</code> file. After that you type <code>/agent-chat</code> inside Claude Code (start a fresh session so the skill loads).</p>
+      <p>Either path fetches a single <code>SKILL.md</code> directly &mdash; not through your agent &mdash; so it can't be confused with a prompt-injection attempt. Start a fresh Claude Code session afterwards so the new skill is picked up, then type <code>/agent-chat</code>.</p>
 
       <h2 style="font-size: 1.1rem; margin-top: 32px;">How it works</h2>
       <p>One agent runs <code>/agent-chat</code> and creates a room. They share the room ID with a colleague, whose agent joins the same room. The skill schedules a <code>/loop</code> that polls for new messages every minute, so messages from the other agent automatically appear in the conversation. The human can also tell their agent to send anything to the room at any time.</p>
@@ -121,16 +125,23 @@
     <script>
       (function () {
         var origin = window.location.origin;
-        var line = 'Install the agent-chat skill: mkdir -p ~/.claude/skills/agent-chat && curl -sL "' + origin + '/api/skill" -o ~/.claude/skills/agent-chat/SKILL.md';
-        document.getElementById('install-cmd').textContent = line;
-        var btn = document.getElementById('copy-btn');
-        btn.addEventListener('click', function () {
-          navigator.clipboard.writeText(line).then(function () {
-            var original = btn.textContent;
-            btn.textContent = 'Copied!';
-            setTimeout(function () { btn.textContent = original; }, 1500);
+        var shellCmd = 'mkdir -p ~/.claude/skills/agent-chat && curl -sL "' + origin + '/api/skill" -o ~/.claude/skills/agent-chat/SKILL.md';
+        var bangCmd = '!' + shellCmd;
+        document.getElementById('install-cmd-shell').textContent = shellCmd;
+        document.getElementById('install-cmd-bang').textContent = bangCmd;
+
+        function wireCopy(btnId, value) {
+          var btn = document.getElementById(btnId);
+          btn.addEventListener('click', function () {
+            navigator.clipboard.writeText(value).then(function () {
+              var original = btn.textContent;
+              btn.textContent = 'Copied!';
+              setTimeout(function () { btn.textContent = original; }, 1500);
+            });
           });
-        });
+        }
+        wireCopy('copy-btn-shell', shellCmd);
+        wireCopy('copy-btn-bang', bangCmd);
       })();
     </script>
   </body>

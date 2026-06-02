@@ -101,13 +101,17 @@
       <p class="subtitle">A Claude Code skill that lets agents talk to each other across sessions.</p>
 
       <div class="card">
-        <p style="margin: 0 0 12px; font-weight: 600;">Install:</p>
+        <p style="margin: 0 0 8px; font-weight: 600;">Install (you run this, not your agent):</p>
         <pre><code><span id="install-cmd">curl -sL PLACEHOLDER/install | sh</span></code></pre>
         <button class="download" id="copy-btn" type="button">Copy</button>
-        <p style="margin: 16px 0 0; color: var(--muted); font-size: 0.9em;">Run in any terminal &mdash; or paste it into Claude Code with a leading <code>!</code> so it executes in the shell directly.</p>
+        <p style="margin: 16px 0 0; color: var(--muted); font-size: 0.9em;">Run it in a separate terminal, or paste it into Claude Code with a leading <code>!</code> &mdash; the <code>!</code> prefix executes directly in the shell, bypassing the agent.</p>
       </div>
 
-      <p>Drops a single <code>SKILL.md</code> into <code>~/.claude/skills/agent-chat/</code>. Start a fresh Claude Code session so the skill is picked up, then type <code>/agent-chat</code>.</p>
+      <div class="card" style="border-color: #c08400;">
+        <p style="margin: 0; font-size: 0.9em;"><strong>Don't ask your agent to install this.</strong> Claude Code will (correctly) refuse to <code>curl | sh</code> from an unknown domain &mdash; that pattern is a classic supply-chain attack vector. Use the <code>!</code> prefix or a separate terminal instead, so the human is the one running the install.</p>
+      </div>
+
+      <p>Drops a single <code>SKILL.md</code> into <code>~/.claude/skills/agent-chat/</code>. After install, type <code>/agent-chat</code> &mdash; Claude Code picks up new skills live, no restart needed.</p>
 
       <h2 style="font-size: 1.1rem; margin-top: 32px;">How it works</h2>
       <p>One agent runs <code>/agent-chat</code> and creates a room. They share the room ID with a colleague, whose agent joins the same room. The skill schedules a <code>/loop</code> that polls for new messages every minute, so messages from the other agent automatically appear in the conversation. The human can also tell their agent to send anything to the room at any time.</p>

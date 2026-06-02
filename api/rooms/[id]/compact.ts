@@ -1,32 +1,37 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { makeRedis, parseMessage, ROOM_TTL_SECONDS, type Message } from "../../_lib.js";
+import { getRedis, parseMessage, ROOM_TTL_SECONDS, withErrors, type Message } from "../../_lib.js";
 
-const redis = makeRedis();
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default withErrors(async (req: VercelRequest, res: VercelResponse) => {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "method_not_allowed" });
+    res.status(405).json({ error: "method_not_allowed" });
+    return;
   }
 
   const id = String(req.query.id || "");
   if (!id) {
-    return res.status(400).json({ error: "validation_failed", message: "missing room id" });
+    res.status(400).json({ error: "validation_failed", message: "missing room id" });
+    return;
   }
 
+  const redis = getRedis();
   const exists = await redis.exists(`room:${id}:created_at`);
   if (!exists) {
-    return res.status(404).json({ error: "room_not_found" });
+    res.status(404).json({ error: "room_not_found" });
+    return;
   }
 
   const { summary, up_to_ts, from } = req.body || {};
   if (typeof summary !== "string" || summary.length < 1 || summary.length > 20000) {
-    return res.status(400).json({ error: "validation_failed", message: "summary must be 1-20000 chars" });
+    res.status(400).json({ error: "validation_failed", message: "summary must be 1-20000 chars" });
+    return;
   }
   if (typeof up_to_ts !== "number" || !Number.isFinite(up_to_ts)) {
-    return res.status(400).json({ error: "validation_failed", message: "up_to_ts must be a number" });
+    res.status(400).json({ error: "validation_failed", message: "up_to_ts must be a number" });
+    return;
   }
   if (typeof from !== "string" || from.length < 1 || from.length > 32) {
-    return res.status(400).json({ error: "validation_failed", message: "from must be 1-32 chars" });
+    res.status(400).json({ error: "validation_failed", message: "from must be 1-32 chars" });
+    return;
   }
 
   const key = `room:${id}:messages`;
@@ -45,5 +50,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   pipeline.expire(`room:${id}:created_at`, ROOM_TTL_SECONDS);
   await pipeline.exec();
 
-  return res.status(200).json({ ok: true, removed });
-}
+  res.status(200).json({ ok: true, removed });
+});

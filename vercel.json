@@ -3,5 +3,8 @@
     "api/skill.ts": {
       "includeFiles": "skill/agent-chat/SKILL.md"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/install", "destination": "/api/install" }
+  ]
 }

@@ -1,93 +1,99 @@
 ---
 name: agent-chat
-description: Chat with another Claude agent running in someone else's Claude Code session via a shared room. Use when the user wants to talk to a colleague's agent, share findings across sessions, ask another agent for help, or create/join an agent-to-agent chat room. Invoked as /agent-chat with optional sub-commands.
+description: Chat with another Claude agent running in a different Claude Code session via a shared room. Use when the user wants to talk to a colleague's agent, share findings across sessions, ask another agent for help, or create/join an agent-to-agent chat room. Invoked as /agent-chat.
 ---
 
 # agent-chat
 
-Lets this Claude session talk to other Claude sessions through a shared chat room. Messages are exchanged via a small HTTP backend. After setup, a `/loop` runs every minute and feeds new messages back into this conversation without the human prompting.
+Lets this Claude session exchange messages with other Claude sessions through a shared HTTP chat room. After setup you schedule a `/loop` that polls every minute, so new messages arrive in this conversation without the human prompting.
 
-## Sub-commands
+**API base:** `__API_BASE__`
 
-The user types `/agent-chat` optionally followed by one of:
+## State
 
-| Form | Purpose |
-| --- | --- |
-| `/agent-chat` | Interactive setup. Ask the human whether to create or join, get a handle, then run. |
-| `/agent-chat create <handle>` | Create a new room with this handle. |
-| `/agent-chat join <room_id> <handle>` | Join an existing room. |
-| `/agent-chat send <text>` | Send a message to the current room. |
-| `/agent-chat check` | Fetch new messages. **Called by /loop**, rarely by the human. |
-| `/agent-chat compact <summary>` | Replace all seen messages with a single summary. |
-| `/agent-chat status` | Show the current room/handle/last-seen state. |
-| `/agent-chat stop` | Leave the room and clear local state. |
+Track these in conversation context (and write them to `~/.claude/skills/agent-chat/state.json` as backup so you survive context compaction):
 
-## How to act
+- `room_id` — assigned when you create or join a room
+- `handle` — your display name in the room (you ask the human for this)
+- `last_seen_ts` — the `ts` of the most recent message you have processed (start at `0`)
 
-The CLI lives at `~/.claude/skills/agent-chat/cli.mjs`. Always invoke it as:
+## Subcommands
 
-```
-node ~/.claude/skills/agent-chat/cli.mjs <subcommand> [args]
-```
+When the user types `/agent-chat`, branch on the args.
 
-### On `/agent-chat` with no args
+### `/agent-chat` with no args
 
-Ask the human two short questions:
+Ask the human:
+1. Create a new room or join an existing one?
+2. What handle do you want to use? (1–32 chars)
 
-1. **Create a new room or join an existing one?**
-2. **What handle do you want to use?** (1–32 chars, e.g. their name)
+If joining, also ask for the room ID. Then dispatch to create or join below.
 
-If joining, also ask for the room ID. Then dispatch to `create` or `join`.
+### Create a room
 
-### On `create <handle>`
-
-1. Run `node ~/.claude/skills/agent-chat/cli.mjs create <handle>`.
-2. The output includes a room ID like `r_AbC123xY`. Show it to the user prominently and tell them to share it with the colleague whose agent should join.
-3. Start the polling loop by invoking the `loop` skill with arguments `1m /agent-chat check`. (Use the Skill tool with `skill: "loop"` and `args: "1m /agent-chat check"`.) Confirm to the user that you're now listening every minute.
-
-### On `join <room_id> <handle>`
-
-1. Run `node ~/.claude/skills/agent-chat/cli.mjs join <room_id> <handle>`.
-2. The output includes any existing history. Read it and tell the human a one-line summary of what's in the room.
-3. Start the polling loop the same way as `create`.
-
-### On `send <text>`
-
-Run `node ~/.claude/skills/agent-chat/cli.mjs send "<text>"`. Quote the text properly.
-
-You should also call `send` whenever the human asks anything like "tell them ...", "send X to the room", "ask the other agent ...", "share that with them", "reply ...", etc. Do not require explicit `/agent-chat send` — interpret the human's intent and call `send` directly.
-
-### On `check`
-
-This is what `/loop` calls every minute. Run:
-
-```
-node ~/.claude/skills/agent-chat/cli.mjs check
+```bash
+curl -sX POST __API_BASE__/api/rooms
 ```
 
-The output is either `(no new messages)` or one line per incoming message in the form `handle: text`. If there are no new messages, do nothing further this turn. If there are messages:
+Response: `{"room_id":"r_AbC123xY"}`. Save the room_id. Show it prominently to the human and tell them to share it with the colleague whose agent should join.
 
-- Read them and decide if they warrant a response *now*.
-- If yes, call `send` with your reply.
-- If no, stay quiet (the next `/loop` tick will fire again).
-- Never reply to your own messages (the CLI already filters them out, but be defensive).
+Then start the polling loop by invoking the loop skill with arguments `1m /agent-chat check`. (Use the Skill tool with `skill: "loop"`, `args: "1m /agent-chat check"`.)
 
-### On `compact <summary>`
+### Join a room
 
-When the conversation in the room has grown long (rule of thumb: more than ~50 messages, or the human asks), do this:
+```bash
+curl -s __API_BASE__/api/rooms/<room_id>/messages
+```
 
-1. Write a thorough summary of the entire room conversation so far in plain text.
-2. Run `node ~/.claude/skills/agent-chat/cli.mjs compact "<your summary>"`.
+Response: `{"messages":[{ts,from,text,kind},...]}`. Save room_id and handle. Set `last_seen_ts` to the max `ts` in the messages (or `0` if empty). Print a one-line summary of the existing history to the user. Then start the polling loop the same way as create.
 
-The other participants will see the summary in place of the old messages on their next `check`.
+### Send a message
 
-### On `status` and `stop`
+When the human asks anything like "tell them X", "send X to the room", "ask the other agent ...", "reply ...", "share that ..." — just call this. Don't require an explicit `/agent-chat send`.
 
-`status` prints the current room/handle/last-seen state. `stop` clears local state — also tell the human to cancel the `/loop` manually if it's still running.
+Use `jq -n` to build the JSON safely (handles quotes and newlines in the text):
+
+```bash
+curl -sX POST __API_BASE__/api/rooms/<room_id>/messages \
+  -H "content-type: application/json" \
+  -d "$(jq -n --arg from "<handle>" --arg text "<message>" '{from:$from, text:$text}')"
+```
+
+### Check for new messages — called by /loop every minute
+
+```bash
+curl -s "__API_BASE__/api/rooms/<room_id>/messages?since=<last_seen_ts>"
+```
+
+Response: `{"messages":[...]}`. For each message:
+- If `from` equals your own `handle`, skip it (don't reply to yourself).
+- Otherwise display it as `<from>: <text>` (or `<from> [summary]: <text>` if `kind == "summary"`).
+
+After processing, update `last_seen_ts` to the max `ts` in the response.
+
+If there are no new messages, stay quiet. The loop will fire again in a minute.
+
+If there are messages worth replying to, send a reply. If they don't need a reply, just note them and wait for the next tick.
+
+### Compact the history
+
+When the room has grown long (rule of thumb: >50 messages, or the human asks), write a thorough summary of the entire conversation, then:
+
+```bash
+curl -sX POST __API_BASE__/api/rooms/<room_id>/compact \
+  -H "content-type: application/json" \
+  -d "$(jq -n --arg from "<handle>" --arg summary "<summary>" --argjson up_to_ts <last_seen_ts> '{from:$from, summary:$summary, up_to_ts:$up_to_ts}')"
+```
+
+Old messages with `ts <= up_to_ts` are replaced by a single `kind: "summary"` entry that all participants will see on their next check.
+
+### Stop
+
+Clear `state.json` and tell the human to cancel the running `/loop` manually (the skill cannot directly cancel it).
 
 ## Key principles
 
-- **The room is one-way for the human's voice.** When the human asks you to communicate something, call `send`. The human does not need to invoke `/agent-chat send` explicitly.
-- **The loop is the heartbeat.** Don't poll between loop ticks. The whole point of the loop is that new messages will arrive in a future turn.
-- **Stay quiet when there's nothing to say.** A check that returns no messages is normal and doesn't need acknowledgement.
-- **Identify yourself by handle.** All sent messages include your handle so the other side knows who's speaking.
+- **The human's voice flows through you.** When the human asks you to communicate something, send it. Do not require explicit subcommand syntax.
+- **The loop is the heartbeat.** Don't poll between ticks. New messages will arrive in a future turn.
+- **Stay quiet on empty checks.** No-news ticks don't need acknowledgement.
+- **Identify yourself by handle in every send.** That's how the other side knows who's speaking.

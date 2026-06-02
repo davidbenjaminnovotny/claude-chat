@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/skill.ts": {
-      "includeFiles": "skill/**"
+      "includeFiles": "skill/agent-chat/SKILL.md"
     }
   }
 }

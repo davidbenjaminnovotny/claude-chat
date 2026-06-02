@@ -5,8 +5,8 @@ A Vercel-hosted chat backend + downloadable Claude Code skill that lets two (or 
 ## What's in this repo
 
 - `api/` — Vercel serverless functions (the HTTP backend).
-- `public/` — Static landing page with the skill download button.
-- `skill/agent-chat/` — Source files for the skill bundle. Served as a zip from `/api/skill`, with the deployed URL templated in at download time.
+- `public/` — Static landing page with the install one-liner.
+- `skill/agent-chat/SKILL.md` — The skill itself. A single markdown file the agent reads. Served from `/api/skill` with the deployed URL templated in.
 
 Everything ships in one Vercel deploy.
 
@@ -34,26 +34,18 @@ vercel dev
 | `POST` | `/api/rooms/:id/messages` | Append `{from, text}`. Returns `{ts}`. |
 | `GET`  | `/api/rooms/:id/messages?since=<ts>` | Fetch messages newer than `<ts>`. |
 | `POST` | `/api/rooms/:id/compact` | Replace messages with `ts <= up_to_ts` by a summary. |
-| `GET`  | `/api/skill` | Download the skill as a zip (URL templated to this deployment). |
+| `GET`  | `/api/skill` | The SKILL.md (URL templated for this deployment). |
 
 Rooms (and their messages) expire 24 hours after the last write.
 
 ## How an agent uses it
 
-After deploying, visit the landing page, click "Download agent-chat.zip", unzip into `~/.claude/skills/`, then run `/agent-chat` inside Claude Code.
+After deploying, visit the landing page and copy the install line. Paste it into a Claude Code session — the agent will fetch the one-file skill into `~/.claude/skills/agent-chat/SKILL.md`. Start a fresh session and type `/agent-chat`.
 
-The skill provides these sub-commands:
-
-- `/agent-chat` — interactive create/join
-- `/agent-chat create <handle>` — create a room
-- `/agent-chat join <room_id> <handle>` — join a room
-- `/agent-chat send <text>` — send a message
-- `/agent-chat check` — pull new messages (called by `/loop` every minute)
-- `/agent-chat compact <summary>` — collapse history into a summary
-- `/agent-chat status` / `/agent-chat stop`
+The skill instructs the agent to hit the API directly via `curl`. No CLI, no Node script in the skill — just markdown.
 
 ## Design notes
 
-See `docs/superpowers/specs/2026-06-02-agent-chat-design.md` for the full design.
+See `docs/superpowers/specs/2026-06-02-agent-chat-design.md` for the original design (since simplified: the skill is now one markdown file; there is no CLI binary or zip bundle).
 
-Key choices: HTTP polling (no WebSocket), no auth (room IDs are unguessable; this is for trusted users), Upstash Redis with 24h TTL, single-file CLI for the skill (no npm deps in the skill itself — uses Node's built-in `fetch`).
+Key choices: HTTP polling (no WebSocket), no auth (room IDs are unguessable; this is for trusted users), Upstash Redis with 24h TTL, skill is a single markdown file that tells the agent to use `curl` + `jq` directly.

@@ -9,8 +9,7 @@
   },
   "dependencies": {
     "@upstash/redis": "^1.34.3",
-    "@vercel/node": "^3.2.24",
-    "jszip": "^3.10.1"
+    "@vercel/node": "^3.2.24"
   },
   "devDependencies": {
     "@types/node": "^20.16.5",

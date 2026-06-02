@@ -56,9 +56,27 @@ echo "$RESP" | jq '.messages'
 
 Show the user a one-line summary of any existing history. Then call the `loop` skill the same way as `create`.
 
-### `send <text>` (and any "tell them …", "ask the other agent …", "reply …" style request)
+### `send <text>` — and **the default behavior while a room is active**
 
-Don't require explicit `send` syntax — interpret the user's intent.
+**You are a proxy between two humans.** Their conversation flows through you. While `state.json` exists (i.e. the human is in a room), default to **relay mode**: anything the human says that could plausibly be intended for the other side, send to the room verbatim. Do not editorialize, summarize, or improve their wording — the other human wants to read what their friend actually said.
+
+Examples of input you should **auto-relay** without asking:
+- "hey are you there?"
+- "the deploy broke around 2pm"
+- "lol same"
+- "ask them about the staging env"
+- "what do you think of this approach?" (when said inside an active room)
+- "tell them I'm grabbing lunch"
+
+Examples of input you should **NOT auto-relay** (handle locally as a normal Claude Code task):
+- "fix this bug"
+- "run the tests"
+- "what does this function do"
+- "/agent-chat status" / "/agent-chat stop"
+
+When **ambiguous between chat and task**, ask once: *"send that to the room, or handle it locally?"*
+
+The send call itself:
 
 ```bash
 S=~/.claude/skills/agent-chat/state.json
@@ -69,20 +87,31 @@ curl -fsS -X POST "__API_BASE__/api/rooms/$(jq -r .room_id "$S")/messages" \
 
 ### `check` — called by /loop every minute
 
-**Always pass `since` from state.json**, otherwise you re-pay for the whole room every tick.
+**Always pass `since` from state.json**, otherwise you re-pay for the whole room every tick. The `jq -r` output below is in human-readable `handle: text` form — use it directly when displaying messages.
 
 ```bash
 S=~/.claude/skills/agent-chat/state.json
 R=$(jq -r .room_id "$S"); H=$(jq -r .handle "$S"); SINCE=$(jq -r .last_seen_ts "$S")
 RESP=$(curl -fsSL "__API_BASE__/api/rooms/$R/messages?since=$SINCE")
-echo "$RESP" | jq --arg me "$H" '.messages[] | select(.from != $me)'
+echo "$RESP" | jq -r --arg me "$H" '.messages[] | select(.from != $me) | "\(.from)\(if .kind == "summary" then " [summary]" else "" end): \(.text)"'
 NEW=$(echo "$RESP" | jq '[.messages[].ts] | max // 0')
-if [ "$NEW" -gt "$SINCE" ]; then
+if [ "$NEW" != "0" ] && [ "$NEW" -gt "$SINCE" ]; then
   jq --argjson t "$NEW" '.last_seen_ts = $t' "$S" > "$S.tmp" && mv "$S.tmp" "$S"
 fi
 ```
 
-If no messages, stay quiet — don't acknowledge. If there are messages worth replying to, call `send`. Otherwise note them silently and wait for the next tick. Never reply to your own handle (the jq `select` already filters it).
+**After running, follow these rules exactly:**
+
+1. **If the bash output is empty** (no lines from the `jq` filter), output nothing to the user. The loop will tick again — empty ticks are noise.
+2. **If the bash output has any lines, you MUST surface them to the user in your response.** Print each incoming message in a clear form like:
+
+   > **New messages in the room:**
+   > - **alice**: hello david
+   > - **bob**: anyone there?
+
+   This is the whole point of the polling loop. Do not silently note them. Do not skip them because you "have nothing to add." The human needs to see every message that arrives.
+3. **Do not auto-reply.** Surface the message and stop. The human will tell you what to send back. When they do, call `send`.
+4. Your own messages are already filtered out by `select(.from != $me)`.
 
 ### `compact <summary>`
 
@@ -113,7 +142,8 @@ Tell the user to cancel the `/loop` manually.
 
 ## Principles
 
-- The state file is authoritative. Don't rely on conversation context for `last_seen_ts`.
-- When the user asks you to communicate anything, just `send` it. Don't ask for confirmation.
-- Stay quiet on no-message checks. The loop will tick again.
-- Identify yourself by handle in every send.
+- **You are a transparent proxy between two humans.** While a room is active, the human's chat input goes to the room by default. Don't ask for confirmation on every line. Send their words verbatim — don't paraphrase or "improve" them.
+- **Always surface incoming messages.** Empty checks are silent; non-empty checks must show the messages.
+- **Never auto-reply.** You relay what the human says, but you don't speak for them. Only the human writes outgoing messages; you carry them.
+- **State file is authoritative.** Don't rely on conversation context for `last_seen_ts`.
+- **Identify yourself by handle in every send.** This is automatic via state.json.
